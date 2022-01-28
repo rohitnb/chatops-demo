@@ -1,0 +1,68 @@
+name: PR ChatOps Bye Command
+
+on: [issue_comment]
+
+jobs:
+  figure-out-if-actor-is-approved:
+    if: github.event.issue.pull_request != null && contains(github.event.comment.body, '/bye')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+      - name: Check if the Actor is in the approved list
+        id: approvedcheck
+        run: |
+          myarray=(`grep bye= .github/pr-cmd-approved.txt | sed -e 's/bye\=//g'`)
+          if [[ ! " ${myarray[*]} " =~  " ${GITHUB_ACTOR} " ]]; then
+           echo "::set-output name=continue_flag::false"
+          else
+           echo "::set-output name=continue_flag::true"
+          fi
+      - name: Fail if actor is not approved
+        if: ${{ steps.approvedcheck.outputs.continue_flag == 'false'}}
+        run: |
+          echo "Not an Approved User. You cannot run this command."
+          exit 1
+      
+  the-bye-command:
+    needs: figure-out-if-actor-is-approved
+    if: github.event.issue.pull_request != null && contains(github.event.comment.body, '/bye')
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Listen for Bye
+        uses: machine-learning-apps/actions-chatops@master
+        with:
+          TRIGGER_PHRASE: "/bye"
+        env: 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: pr-comment
+
+      - name: GitHub API Request
+        id: request
+        uses: octokit/request-action@v2.0.0
+        with:
+          route: ${{ github.event.issue.pull_request.url }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+
+      - name: Get PR Details
+        id: pr_details
+        run: |
+          echo "::set-output name=pr_number::${{ fromJson(steps.request.outputs.data).number }}"
+          echo "::set-output name=repo_owner_login::${{ fromJson(steps.request.outputs.data).base.repo.owner.login }}"
+          echo "::set-output name=repo_name::${{ fromJson(steps.request.outputs.data).base.repo.name }}"
+
+      - name: Add PR Comment
+        env:
+         PR_NUMBER: ${{ steps.pr_details.outputs.pr_number }}
+         REPO_OWNER_LOGIN: ${{ steps.pr_details.outputs.repo_owner_login }}
+         REPO_NAME: ${{ steps.pr_details.outputs.repo_name }}
+        uses: actions/github-script@v5
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: 'Approved - Bye! 👋'
+            })
