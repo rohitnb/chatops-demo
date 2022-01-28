@@ -1,4 +1,4 @@
-name: PR ChatOps Bye Command
+name: PR Command Bye
 
 on: [issue_comment]
 
